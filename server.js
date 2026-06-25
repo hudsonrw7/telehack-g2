@@ -19,42 +19,18 @@ const TERM_TYPE   = 0x18
 const NAWS        = 0x1F
 const NEW_ENVIRON = 0x27
 
-function processTelnet(buf, socket) {
+function processTelnet(buf) {
   const out = []
   let i = 0
   while (i < buf.length) {
     if (buf[i] !== IAC) { out.push(buf[i++]); continue }
     const cmd = buf[i + 1]
     if (cmd === SB) {
-      // skip subnegotiation until IAC SE
       i += 2
       while (i < buf.length - 1 && !(buf[i] === IAC && buf[i + 1] === SE)) i++
       i += 2
-    } else if (cmd === WILL) {
-      const opt = buf[i + 2]
-      if (opt === SGA) {
-        socket.write(Buffer.from([IAC, DO, opt]))    // agree to suppress go-ahead
-      } else if (opt === ECHO) {
-        socket.write(Buffer.from([IAC, DONT, opt])) // local echo only (line mode)
-      } else {
-        socket.write(Buffer.from([IAC, DONT, opt])) // refuse others
-      }
-      i += 3
-    } else if (cmd === DO) {
-      const opt = buf[i + 2]
-      if (opt === NAWS) {
-        // send window size: 80x24
-        socket.write(Buffer.from([IAC, WILL, NAWS]))
-        socket.write(Buffer.from([IAC, SB, NAWS, 0, 80, 0, 24, IAC, SE]))
-      } else if (opt === TERM_TYPE) {
-        socket.write(Buffer.from([IAC, WILL, TERM_TYPE]))
-        socket.write(Buffer.from([IAC, SB, TERM_TYPE, 0, ...Buffer.from('VT100'), IAC, SE]))
-      } else {
-        socket.write(Buffer.from([IAC, WONT, opt]))
-      }
-      i += 3
-    } else if (cmd === WONT || cmd === DONT) {
-      i += 3
+    } else if (cmd === WILL || cmd === DO || cmd === WONT || cmd === DONT) {
+      i += 3 // skip all negotiation, send nothing back
     } else {
       i += 2
     }
@@ -81,7 +57,7 @@ function connectTelehack() {
   })
 
   socket.on('data', data => {
-    const text = processTelnet(data, socket)
+    const text = processTelnet(data)
     if (text.length > 0) {
       broadcast(text)
     }
