@@ -17,12 +17,14 @@ let hasNewContent = false
 let relayNotification = ''
 let relayTimer: ReturnType<typeof setTimeout> | null = null
 
-type Mode = 'terminal' | 'menu1' | 'menu2'
+type Mode = 'terminal' | 'menu1' | 'menu2' | 'recording' | 'processing'
 let mode: Mode = 'terminal'
 let menuIndex = 0
 
 const MENU1_ITEMS = ['login', 'w', 'relay', 'send', 'porthack']
 const MENU2_ITEMS = ['talk to type', 'wardial', 'score /badge', 'space', 'ctrl+c']
+
+let pcmChunks: number[] = []
 
 const textContainer = new TextContainerProperty({
   xPosition: 0,
@@ -34,7 +36,7 @@ const textContainer = new TextContainerProperty({
   paddingLength: 4,
   containerID: 1,
   containerName: 'main',
-  content: lines.join('\n'),
+  content: 'Connecting...',
   isEventCapture: 1,
 })
 
@@ -54,10 +56,20 @@ function setRelayNotification(sender: string, message: string) {
   }, 8000)
 }
 
+function uint8ToBase64(u8: Uint8Array): string {
+  let binary = ''
+  for (let i = 0; i < u8.length; i++) binary += String.fromCharCode(u8[i])
+  return btoa(binary)
+}
+
 function updateDisplay() {
   let content: string
 
-  if (mode === 'menu1' || mode === 'menu2') {
+  if (mode === 'recording') {
+    content = '◉ RECORDING\nTap to stop'
+  } else if (mode === 'processing') {
+    content = '◌ PROCESSING...\nPlease wait'
+  } else if (mode === 'menu1' || mode === 'menu2') {
     const items = mode === 'menu1' ? MENU1_ITEMS : MENU2_ITEMS
     const label = mode === 'menu1' ? '--- COMMANDS ---' : '--- ACTIONS ---'
     const rows = items.map((item, i) =>
@@ -71,8 +83,7 @@ function updateDisplay() {
     const visibleCount = Math.max(VISIBLE_LINES - reservedLines, 1)
     const start = Math.max(end - visibleCount, 0)
     const visible = lines.slice(start, end).join('\n')
-    const scrolled = scrollOffset > 0
-    const indicator = scrolled ? `[+${scrollOffset}${hasNewContent ? ' NEW↓' : ''}]\n` : ''
+    const indicator = scrollOffset > 0 ? `[+${scrollOffset}${hasNewContent ? ' NEW↓' : ''}]\n` : ''
     const current = currentLine.trim() ? `\n${currentLine.trim()}` : ''
     const preview = inputPreview ? `\n> ${inputPreview}` : ''
     const notify = relayNotification ? `${relayNotification}\n` : ''
@@ -82,12 +93,43 @@ function updateDisplay() {
   bridge.textContainerUpgrade(new TextContainerUpgrade({ containerID: 1, content }))
 }
 
+async function startRecording() {
+  pcmChunks = []
+  const ok = await bridge.audioControl(true)
+  if (!ok) {
+    lines.push('Mic unavailable')
+    updateDisplay()
+    return
+  }
+  mode = 'recording'
+  updateDisplay()
+}
+
+async function stopRecording() {
+  await bridge.audioControl(false)
+  mode = 'processing'
+  updateDisplay()
+
+  if (pcmChunks.length === 0) {
+    mode = 'terminal'
+    updateDisplay()
+    return
+  }
+
+  const pcmBase64 = uint8ToBase64(new Uint8Array(pcmChunks))
+  ws?.send(`\x00PCM_DONE:${pcmBase64}`)
+  pcmChunks = []
+}
+
 function selectMenuItem() {
   const items = mode === 'menu1' ? MENU1_ITEMS : MENU2_ITEMS
   const selected = items[menuIndex]
+  mode = 'terminal'
+  menuIndex = 0
 
   if (selected === 'talk to type') {
-    ws?.send('\x00VOICE:')
+    startRecording()
+    return
   } else if (selected === 'space') {
     ws?.send('\x00RAW: ')
   } else if (selected === 'ctrl+c') {
@@ -96,8 +138,6 @@ function selectMenuItem() {
     ws?.send(selected)
   }
 
-  mode = 'terminal'
-  menuIndex = 0
   updateDisplay()
 }
 
@@ -133,7 +173,6 @@ function processOutput(raw: string) {
   }
 
   if (scrollOffset === 0) hasNewContent = false
-
   if (mode === 'terminal') updateDisplay()
 }
 
@@ -158,6 +197,19 @@ function connect() {
       const rest = text.slice(7)
       const colon = rest.indexOf(':')
       setRelayNotification(rest.slice(0, colon), rest.slice(colon + 1))
+      updateDisplay()
+    } else if (text === '\x00TRANSCRIBING:') {
+      mode = 'processing'
+      updateDisplay()
+    } else if (text.startsWith('\x00TRANSCRIPT:')) {
+      const transcript = text.slice(12)
+      lines.push(`> ${transcript}`)
+      mode = 'terminal'
+      scrollOffset = 0
+      updateDisplay()
+    } else if (text === '\x00TRANSCRIPT_ERROR:') {
+      lines.push('[Voice: error]')
+      mode = 'terminal'
       updateDisplay()
     } else {
       processOutput(text)
@@ -189,35 +241,42 @@ const unsubscribe = bridge.onEvenHubEvent(event => {
     return
   }
 
+  // Collect PCM while recording
+  if (mode === 'recording' && event.audioEvent?.audioPcm) {
+    pcmChunks.push(...event.audioEvent.audioPcm)
+    return
+  }
+
   if (type === OsEventTypeList.DOUBLE_CLICK_EVENT) {
-    if (mode !== 'terminal') {
-      // close whichever menu is open
+    if (mode === 'menu1' || mode === 'menu2') {
       mode = 'terminal'
       menuIndex = 0
-    } else {
-      // open menu2 from terminal
+      updateDisplay()
+    } else if (mode === 'terminal') {
       mode = 'menu2'
       menuIndex = 0
+      updateDisplay()
     }
-    updateDisplay()
     return
   }
 
   if (type === OsEventTypeList.CLICK_EVENT) {
-    if (mode === 'terminal') {
+    if (mode === 'recording') {
+      stopRecording()
+    } else if (mode === 'terminal') {
       mode = 'menu1'
       menuIndex = 0
       updateDisplay()
-    } else {
+    } else if (mode === 'menu1' || mode === 'menu2') {
       selectMenuItem()
     }
     return
   }
 
   if (type === OsEventTypeList.SCROLL_TOP_EVENT) {
-    if (mode !== 'terminal') {
+    if (mode === 'menu1' || mode === 'menu2') {
       menuIndex = Math.max(menuIndex - 1, 0)
-    } else {
+    } else if (mode === 'terminal') {
       scrollOffset = Math.min(scrollOffset + VISIBLE_LINES, lines.length - VISIBLE_LINES)
     }
     updateDisplay()
@@ -225,10 +284,10 @@ const unsubscribe = bridge.onEvenHubEvent(event => {
   }
 
   if (type === OsEventTypeList.SCROLL_BOTTOM_EVENT) {
-    if (mode !== 'terminal') {
+    if (mode === 'menu1' || mode === 'menu2') {
       const items = mode === 'menu1' ? MENU1_ITEMS : MENU2_ITEMS
       menuIndex = Math.min(menuIndex + 1, items.length - 1)
-    } else {
+    } else if (mode === 'terminal') {
       scrollOffset = Math.max(scrollOffset - VISIBLE_LINES, 0)
     }
     updateDisplay()

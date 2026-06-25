@@ -226,7 +226,9 @@
         if (data === '\x00PING') return
         if (data.startsWith('\x00PREVIEW:')) return
         if (data.startsWith('\x00RELAY:')) return
-        if (data === '\x00VOICE:') { startVoice(); return }
+        if (data === '\x00TRANSCRIBING:') { setRecordingStatus('TRANSCRIBING...'); return }
+        if (data.startsWith('\x00TRANSCRIPT:')) { setRecordingStatus(''); return }
+        if (data === '\x00TRANSCRIPT_ERROR:') { setRecordingStatus(''); return }
         appendLog(data)
       }
     }
@@ -253,18 +255,8 @@
       if (e.key === 'c' && e.ctrlKey) { e.preventDefault(); sendRaw('\x03') }
     })
 
-    function startVoice() {
-      const SR = window.SpeechRecognition || window.webkitSpeechRecognition
-      if (!SR) return
-      const r = new SR()
-      r.lang = 'en-US'
-      r.interimResults = false
-      r.onresult = e => {
-        const text = e.results[0][0].transcript
-        cmdEl.value = text
-        sendCmd()
-      }
-      r.start()
+    function setRecordingStatus(msg) {
+      statusText.textContent = msg || (statusDot.classList.contains('connected') ? 'ONLINE' : 'OFFLINE')
     }
 
     connect()

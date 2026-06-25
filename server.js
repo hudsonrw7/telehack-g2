@@ -3,6 +3,7 @@ import { Client } from 'ssh2'
 
 const PORT = process.env.PORT || 8080
 const TELEHACK_PASS = process.env.TELEHACK_PASS || ''
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY || ''
 
 const wss = new WebSocketServer({ port: PORT, perMessageDeflate: false })
 console.log(`Server running on port ${PORT}`)
@@ -13,6 +14,64 @@ let sshStream = null
 function broadcast(text) {
   for (const ws of clients) {
     if (ws.readyState === 1) ws.send(text)
+  }
+}
+
+function buildWav(pcmBuffer) {
+  const sampleRate = 16000
+  const numChannels = 1
+  const bitsPerSample = 16
+  const byteRate = sampleRate * numChannels * (bitsPerSample / 8)
+  const blockAlign = numChannels * (bitsPerSample / 8)
+  const dataSize = pcmBuffer.length
+  const header = Buffer.alloc(44)
+
+  header.write('RIFF', 0)
+  header.writeUInt32LE(36 + dataSize, 4)
+  header.write('WAVE', 8)
+  header.write('fmt ', 12)
+  header.writeUInt32LE(16, 16)
+  header.writeUInt16LE(1, 20)           // PCM
+  header.writeUInt16LE(numChannels, 22)
+  header.writeUInt32LE(sampleRate, 24)
+  header.writeUInt32LE(byteRate, 28)
+  header.writeUInt16LE(blockAlign, 32)
+  header.writeUInt16LE(bitsPerSample, 34)
+  header.write('data', 36)
+  header.writeUInt32LE(dataSize, 40)
+
+  return Buffer.concat([header, pcmBuffer])
+}
+
+async function transcribeWithWhisper(pcmBase64) {
+  if (!OPENAI_API_KEY) {
+    console.error('OPENAI_API_KEY not set')
+    return null
+  }
+
+  const pcmBuffer = Buffer.from(pcmBase64, 'base64')
+  const wavBuffer = buildWav(pcmBuffer)
+
+  const blob = new Blob([wavBuffer], { type: 'audio/wav' })
+  const form = new FormData()
+  form.append('file', blob, 'audio.wav')
+  form.append('model', 'whisper-1')
+
+  try {
+    const res = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${OPENAI_API_KEY}` },
+      body: form,
+    })
+    if (!res.ok) {
+      console.error('Whisper API error:', res.status, await res.text())
+      return null
+    }
+    const json = await res.json()
+    return json.text?.trim() || null
+  } catch (err) {
+    console.error('Whisper fetch error:', err.message)
+    return null
   }
 }
 
@@ -34,13 +93,10 @@ function connectTelehack() {
       stream.on('data', data => {
         const text = data.toString('utf8')
         broadcast(text)
-        // Detect relay messages: lines matching "*username relays* message"
         const lines = text.split(/\r?\n/)
         for (const line of lines) {
           const m = line.match(/^\*(\S+)\s+relays\*\s+(.+)$/i)
-          if (m) {
-            broadcast(`\x00RELAY:${m[1]}:${m[2].trim()}`)
-          }
+          if (m) broadcast(`\x00RELAY:${m[1]}:${m[2].trim()}`)
         }
       })
 
@@ -85,20 +141,26 @@ wss.on('connection', ws => {
   console.log('Client connected, total:', clients.size + 1)
   clients.add(ws)
 
-  ws.on('message', msg => {
+  ws.on('message', async msg => {
     const text = msg.toString()
     if (text === '\x00PING') return
+
     if (text.startsWith('\x00PREVIEW:')) {
       for (const client of clients) {
         if (client !== ws && client.readyState === 1) client.send(text)
       }
-    } else if (text === '\x00VOICE:') {
-      // broadcast to phone to trigger speech recognition
-      for (const client of clients) {
-        if (client !== ws && client.readyState === 1) client.send('\x00VOICE:')
+    } else if (text.startsWith('\x00PCM_DONE:')) {
+      const pcmBase64 = text.slice(10)
+      broadcast('\x00TRANSCRIBING:')
+      const transcript = await transcribeWithWhisper(pcmBase64)
+      if (transcript) {
+        console.log('Transcript:', transcript)
+        broadcast(`\x00TRANSCRIPT:${transcript}`)
+        if (sshStream && !sshStream.destroyed) sshStream.write(transcript + '\r')
+      } else {
+        broadcast('\x00TRANSCRIPT_ERROR:')
       }
     } else if (text.startsWith('\x00RAW:')) {
-      // send raw bytes to SSH without appending \r (used for space, ctrl+c etc)
       const raw = text.slice(5)
       if (sshStream && !sshStream.destroyed) sshStream.write(raw)
     } else if (sshStream && !sshStream.destroyed) {
