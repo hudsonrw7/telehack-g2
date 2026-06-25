@@ -28,31 +28,44 @@ function stripTelnet(buf) {
   return Buffer.from(out).toString('utf8')
 }
 
-// One shared telnet connection, broadcast to all WebSocket clients
 const clients = new Set()
+let socket = null
 
-const socket = net.createConnection({ host: 'telehack.com', port: 23 })
-
-socket.on('connect', () => {
-  console.log('Connected to Telehack')
-})
-
-socket.on('data', data => {
-  const text = stripTelnet(data)
-  if (text.length > 0) {
-    console.log('Telehack:', JSON.stringify(text))
-    for (const ws of clients) {
-      if (ws.readyState === 1) ws.send(text)
-    }
-  }
-})
-
-socket.on('error', err => {
-  console.error('Telnet error:', err.message)
+function broadcast(text) {
   for (const ws of clients) {
-    if (ws.readyState === 1) ws.send('TELNET ERROR: ' + err.message)
+    if (ws.readyState === 1) ws.send(text)
   }
-})
+}
+
+function connectTelehack() {
+  console.log('Connecting to Telehack...')
+  socket = net.createConnection({ host: 'telehack.com', port: 23 })
+
+  socket.on('connect', () => {
+    console.log('Connected to Telehack')
+    broadcast('\r\n[Connected to Telehack]\r\n')
+  })
+
+  socket.on('data', data => {
+    const text = stripTelnet(data)
+    if (text.length > 0) {
+      console.log('Telehack:', JSON.stringify(text.slice(0, 80)))
+      broadcast(text)
+    }
+  })
+
+  socket.on('error', err => {
+    console.error('Telnet error:', err.message)
+  })
+
+  socket.on('close', () => {
+    console.log('Telehack connection closed, reconnecting in 3s...')
+    broadcast('\r\n[Disconnected from Telehack - reconnecting...]\r\n')
+    setTimeout(connectTelehack, 3000)
+  })
+}
+
+connectTelehack()
 
 wss.on('connection', ws => {
   console.log('Client connected, total:', clients.size + 1)
@@ -61,11 +74,10 @@ wss.on('connection', ws => {
   ws.on('message', msg => {
     const text = msg.toString()
     if (text.startsWith('\x00PREVIEW:')) {
-      // relay preview to all other clients (glasses), don't send to telehack
       for (const client of clients) {
         if (client !== ws && client.readyState === 1) client.send(text)
       }
-    } else {
+    } else if (socket && !socket.destroyed) {
       socket.write(text + '\r\n')
     }
   })
