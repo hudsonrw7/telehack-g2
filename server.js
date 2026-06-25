@@ -32,8 +32,10 @@ function processTelnet(buf, socket) {
       i += 2
     } else if (cmd === WILL) {
       const opt = buf[i + 2]
-      if (opt === ECHO || opt === SGA) {
-        socket.write(Buffer.from([IAC, DO, opt]))   // agree to server echo/sga
+      if (opt === SGA) {
+        socket.write(Buffer.from([IAC, DO, opt]))    // agree to suppress go-ahead
+      } else if (opt === ECHO) {
+        socket.write(Buffer.from([IAC, DONT, opt])) // local echo only (line mode)
       } else {
         socket.write(Buffer.from([IAC, DONT, opt])) // refuse others
       }
