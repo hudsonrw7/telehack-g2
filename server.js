@@ -1,12 +1,34 @@
 import { WebSocketServer } from 'ws'
 import { Client } from 'ssh2'
+import http from 'http'
+import fs from 'fs'
+import path from 'path'
+import { fileURLToPath } from 'url'
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 const PORT = process.env.PORT || 8080
 const TELEHACK_PASS = process.env.TELEHACK_PASS || ''
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || ''
 
-const wss = new WebSocketServer({ port: PORT, perMessageDeflate: false })
-console.log(`Server running on port ${PORT}`)
+// HTTP server serves input.html for the phone
+const httpServer = http.createServer((req, res) => {
+  if (req.url === '/' || req.url === '/input') {
+    const file = path.join(__dirname, 'input.html')
+    fs.readFile(file, (err, data) => {
+      if (err) { res.writeHead(404); res.end('Not found'); return }
+      res.writeHead(200, { 'Content-Type': 'text/html' })
+      res.end(data)
+    })
+  } else {
+    res.writeHead(404)
+    res.end('Not found')
+  }
+})
+
+httpServer.listen(PORT, () => console.log(`Server running on port ${PORT}`))
+
+const wss = new WebSocketServer({ server: httpServer, perMessageDeflate: false })
 
 const clients = new Set()
 let sshStream = null
