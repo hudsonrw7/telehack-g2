@@ -43,6 +43,7 @@ function connectTelehack() {
 
   socket.on('connect', () => {
     console.log('Connected to Telehack')
+    socket.setNoDelay(true)
     broadcast('\r\n[Connected to Telehack]\r\n')
   })
 

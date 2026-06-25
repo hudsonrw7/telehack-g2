@@ -97,34 +97,46 @@ function processOutput(raw: string) {
   }
 }
 
-const ws = new WebSocket('wss://telehack-g2-production.up.railway.app')
+let ws: WebSocket
 
-ws.onopen = () => {
-  lines = ['Connected! Type in browser.', 'Single tap = scroll up', 'Double tap = exit']
-  updateDisplay()
-}
+function connect() {
+  ws = new WebSocket('wss://telehack-g2-production.up.railway.app')
 
-ws.onmessage = (event) => {
-  const text: string = event.data
-  if (text.startsWith('\x00PREVIEW:')) {
-    inputPreview = text.slice(9)
+  ws.onopen = () => {
+    lines.push('Connected to Telehack.')
     updateDisplay()
-  } else {
-    processOutput(text)
+  }
+
+  ws.onmessage = (event) => {
+    const text: string = event.data
+    if (text.startsWith('\x00PREVIEW:')) {
+      inputPreview = text.slice(9)
+      updateDisplay()
+    } else {
+      processOutput(text)
+    }
+  }
+
+  ws.onerror = () => {
+    lines.push('Connection error - retrying...')
+    updateDisplay()
+  }
+
+  ws.onclose = () => {
+    lines.push('Disconnected - reconnecting in 3s...')
+    updateDisplay()
+    setTimeout(connect, 3000)
   }
 }
 
-ws.onerror = () => {
-  lines.push('Connection error - is server.js running?')
-  updateDisplay()
-}
+connect()
 
 const unsubscribe = bridge.onEvenHubEvent(event => {
   const sysType = event.sysEvent?.eventType ?? null
   const textType = event.textEvent?.eventType ?? null
 
   if (sysType === OsEventTypeList.DOUBLE_CLICK_EVENT || textType === OsEventTypeList.DOUBLE_CLICK_EVENT) {
-    ws.close()
+    ws?.close()
     bridge.shutDownPageContainer(1)
     return
   }
@@ -148,7 +160,7 @@ const unsubscribe = bridge.onEvenHubEvent(event => {
   }
 
   if (sysType === OsEventTypeList.SYSTEM_EXIT_EVENT || sysType === OsEventTypeList.ABNORMAL_EXIT_EVENT) {
-    ws.close()
+    ws?.close()
     unsubscribe()
   }
 })
