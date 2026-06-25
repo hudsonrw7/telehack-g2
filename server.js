@@ -67,7 +67,7 @@ function connectTelehack() {
 
   conn.connect({
     host: 'telehack.com',
-    port: 22,
+    port: 2222,
     username: TELEHACK_USER,
     password: TELEHACK_PASS,
     readyTimeout: 10000,
