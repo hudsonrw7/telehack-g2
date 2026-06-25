@@ -2,10 +2,12 @@ import { WebSocketServer } from 'ws'
 import net from 'net'
 
 const PORT = process.env.PORT || 8080
+const TELEHACK_USER = process.env.TELEHACK_USER || ''
+const TELEHACK_PASS = process.env.TELEHACK_PASS || ''
+
 const wss = new WebSocketServer({ port: PORT, perMessageDeflate: false })
 console.log(`Server running on port ${PORT}`)
 
-// Telnet constants
 const IAC  = 0xFF
 const WILL = 0xFB
 const WONT = 0xFC
@@ -13,11 +15,6 @@ const DO   = 0xFD
 const DONT = 0xFE
 const SB   = 0xFA
 const SE   = 0xF0
-const ECHO        = 0x01
-const SGA         = 0x03 // suppress go ahead
-const TERM_TYPE   = 0x18
-const NAWS        = 0x1F
-const NEW_ENVIRON = 0x27
 
 function processTelnet(buf) {
   const out = []
@@ -30,7 +27,7 @@ function processTelnet(buf) {
       while (i < buf.length - 1 && !(buf[i] === IAC && buf[i + 1] === SE)) i++
       i += 2
     } else if (cmd === WILL || cmd === DO || cmd === WONT || cmd === DONT) {
-      i += 3 // skip all negotiation, send nothing back
+      i += 3
     } else {
       i += 2
     }
@@ -40,6 +37,8 @@ function processTelnet(buf) {
 
 const clients = new Set()
 let socket = null
+let loginState = 'waiting' // 'waiting' | 'sent_user' | 'sent_pass' | 'done'
+let outputBuffer = ''
 
 function broadcast(text) {
   for (const ws of clients) {
@@ -47,8 +46,33 @@ function broadcast(text) {
   }
 }
 
+function handleAutoLogin(text) {
+  if (!TELEHACK_USER || !TELEHACK_PASS) return
+  outputBuffer += text.toLowerCase()
+  // keep buffer small
+  if (outputBuffer.length > 500) outputBuffer = outputBuffer.slice(-500)
+
+  if (loginState === 'waiting' && outputBuffer.includes('login:')) {
+    console.log('Auto-login: sending username')
+    socket.write(TELEHACK_USER + '\r\n')
+    loginState = 'sent_user'
+    outputBuffer = ''
+  } else if (loginState === 'sent_user' && outputBuffer.includes('assword:')) {
+    console.log('Auto-login: sending password')
+    socket.write(TELEHACK_PASS + '\r\n')
+    loginState = 'sent_pass'
+    outputBuffer = ''
+  } else if (loginState === 'sent_pass' && outputBuffer.includes('@')) {
+    console.log('Auto-login: logged in as', TELEHACK_USER)
+    loginState = 'done'
+    outputBuffer = ''
+  }
+}
+
 function connectTelehack() {
   console.log('Connecting to Telehack...')
+  loginState = 'waiting'
+  outputBuffer = ''
   socket = net.createConnection({ host: 'telehack.com', port: 23 })
 
   socket.on('connect', () => {
@@ -59,6 +83,7 @@ function connectTelehack() {
   socket.on('data', data => {
     const text = processTelnet(data)
     if (text.length > 0) {
+      handleAutoLogin(text)
       broadcast(text)
     }
   })
