@@ -17,14 +17,13 @@ let hasNewContent = false
 let relayNotification = ''
 let relayTimer: ReturnType<typeof setTimeout> | null = null
 
-type Mode = 'terminal' | 'menu1' | 'menu2' | 'recording' | 'processing'
+type Mode = 'terminal' | 'menu1' | 'menu2'
 let mode: Mode = 'terminal'
 let menuIndex = 0
+let lastEvent = ''  // debug: shows last event type on display
 
 const MENU1_ITEMS = ['login', 'w', 'relay', 'send', 'porthack']
-const MENU2_ITEMS = ['talk to type', 'wardial', 'score /badge', 'space', 'ctrl+c']
-
-let pcmChunks: number[] = []
+const MENU2_ITEMS = ['wardial', 'score /badge', 'space', 'ctrl+c', 'finger']
 
 const textContainer = new TextContainerProperty({
   xPosition: 0,
@@ -56,20 +55,10 @@ function setRelayNotification(sender: string, message: string) {
   }, 8000)
 }
 
-function uint8ToBase64(u8: Uint8Array): string {
-  let binary = ''
-  for (let i = 0; i < u8.length; i++) binary += String.fromCharCode(u8[i])
-  return btoa(binary)
-}
-
 function updateDisplay() {
   let content: string
 
-  if (mode === 'recording') {
-    content = '◉ RECORDING\nTap to stop'
-  } else if (mode === 'processing') {
-    content = '◌ PROCESSING...\nPlease wait'
-  } else if (mode === 'menu1' || mode === 'menu2') {
+  if (mode === 'menu1' || mode === 'menu2') {
     const items = mode === 'menu1' ? MENU1_ITEMS : MENU2_ITEMS
     const label = mode === 'menu1' ? '--- COMMANDS ---' : '--- ACTIONS ---'
     const rows = items.map((item, i) =>
@@ -90,55 +79,20 @@ function updateDisplay() {
     content = notify + indicator + visible + current + preview
   }
 
+  // debug line — remove once menus are confirmed working
+  content = `[${lastEvent}]\n` + content
+
   bridge.textContainerUpgrade(new TextContainerUpgrade({ containerID: 1, content }))
 }
 
-async function startRecording() {
-  pcmChunks = []
-  const ok = await bridge.audioControl(true)
-  if (!ok) {
-    lines.push('Mic unavailable')
-    updateDisplay()
-    return
-  }
-  mode = 'recording'
-  updateDisplay()
-}
-
-async function stopRecording() {
-  await bridge.audioControl(false)
-  mode = 'processing'
-  updateDisplay()
-
-  if (pcmChunks.length === 0) {
-    mode = 'terminal'
-    updateDisplay()
-    return
-  }
-
-  const pcmBase64 = uint8ToBase64(new Uint8Array(pcmChunks))
-  ws?.send(`\x00PCM_DONE:${pcmBase64}`)
-  pcmChunks = []
-}
-
-function selectMenuItem() {
-  const items = mode === 'menu1' ? MENU1_ITEMS : MENU2_ITEMS
-  const selected = items[menuIndex]
-  mode = 'terminal'
-  menuIndex = 0
-
-  if (selected === 'talk to type') {
-    startRecording()
-    return
-  } else if (selected === 'space') {
+function sendCommand(cmd: string) {
+  if (cmd === 'space') {
     ws?.send('\x00RAW: ')
-  } else if (selected === 'ctrl+c') {
+  } else if (cmd === 'ctrl+c') {
     ws?.send('\x00RAW:\x03')
   } else {
-    ws?.send(selected)
+    ws?.send(cmd)
   }
-
-  updateDisplay()
 }
 
 function processOutput(raw: string) {
@@ -182,7 +136,7 @@ function connect() {
   ws = new WebSocket('wss://telehack-g2-production.up.railway.app')
 
   ws.onopen = () => {
-    lines.push('Connected to Telehack.')
+    lines.push('Connected.')
     updateDisplay()
     setInterval(() => { if (ws.readyState === 1) ws.send('\x00PING') }, 1000)
   }
@@ -198,34 +152,13 @@ function connect() {
       const colon = rest.indexOf(':')
       setRelayNotification(rest.slice(0, colon), rest.slice(colon + 1))
       updateDisplay()
-    } else if (text === '\x00TRANSCRIBING:') {
-      mode = 'processing'
-      updateDisplay()
-    } else if (text.startsWith('\x00TRANSCRIPT:')) {
-      const transcript = text.slice(12)
-      lines.push(`> ${transcript}`)
-      mode = 'terminal'
-      scrollOffset = 0
-      updateDisplay()
-    } else if (text === '\x00TRANSCRIPT_ERROR:') {
-      lines.push('[Voice: error]')
-      mode = 'terminal'
-      updateDisplay()
     } else {
       processOutput(text)
     }
   }
 
-  ws.onerror = () => {
-    lines.push('Connection error - retrying...')
-    if (mode === 'terminal') updateDisplay()
-  }
-
-  ws.onclose = () => {
-    lines.push('Disconnected - reconnecting in 3s...')
-    if (mode === 'terminal') updateDisplay()
-    setTimeout(connect, 3000)
-  }
+  ws.onerror = () => { lines.push('WS error'); if (mode === 'terminal') updateDisplay() }
+  ws.onclose = () => { lines.push('Disconnected - retrying...'); if (mode === 'terminal') updateDisplay(); setTimeout(connect, 3000) }
 }
 
 connect()
@@ -234,14 +167,12 @@ const unsubscribe = bridge.onEvenHubEvent(event => {
   const sysType = event.sysEvent?.eventType ?? null
   const textType = event.textEvent?.eventType ?? null
 
+  // debug: record what fired
+  lastEvent = `s${sysType ?? '?'} t${textType ?? '?'}`
+
   if (sysType === OsEventTypeList.SYSTEM_EXIT_EVENT || sysType === OsEventTypeList.ABNORMAL_EXIT_EVENT) {
     ws?.close()
     unsubscribe()
-    return
-  }
-
-  if (mode === 'recording' && event.audioEvent?.audioPcm) {
-    pcmChunks.push(...event.audioEvent.audioPcm)
     return
   }
 
@@ -249,7 +180,7 @@ const unsubscribe = bridge.onEvenHubEvent(event => {
     if (mode === 'menu1' || mode === 'menu2') {
       mode = 'terminal'
       menuIndex = 0
-    } else if (mode === 'terminal') {
+    } else {
       mode = 'menu2'
       menuIndex = 0
     }
@@ -260,7 +191,7 @@ const unsubscribe = bridge.onEvenHubEvent(event => {
   if (sysType === OsEventTypeList.SCROLL_TOP_EVENT || textType === OsEventTypeList.SCROLL_TOP_EVENT) {
     if (mode === 'menu1' || mode === 'menu2') {
       menuIndex = Math.max(menuIndex - 1, 0)
-    } else if (mode === 'terminal') {
+    } else {
       scrollOffset = Math.min(scrollOffset + VISIBLE_LINES, lines.length - VISIBLE_LINES)
     }
     updateDisplay()
@@ -271,7 +202,7 @@ const unsubscribe = bridge.onEvenHubEvent(event => {
     if (mode === 'menu1' || mode === 'menu2') {
       const items = mode === 'menu1' ? MENU1_ITEMS : MENU2_ITEMS
       menuIndex = Math.min(menuIndex + 1, items.length - 1)
-    } else if (mode === 'terminal') {
+    } else {
       scrollOffset = Math.max(scrollOffset - VISIBLE_LINES, 0)
     }
     updateDisplay()
@@ -279,15 +210,16 @@ const unsubscribe = bridge.onEvenHubEvent(event => {
   }
 
   if (sysType === OsEventTypeList.CLICK_EVENT || textType === OsEventTypeList.CLICK_EVENT) {
-    if (mode === 'recording') {
-      stopRecording()
-    } else if (mode === 'terminal') {
+    if (mode === 'terminal') {
       mode = 'menu1'
       menuIndex = 0
-      updateDisplay()
-    } else if (mode === 'menu1' || mode === 'menu2') {
-      selectMenuItem()
+    } else {
+      const items = mode === 'menu1' ? MENU1_ITEMS : MENU2_ITEMS
+      sendCommand(items[menuIndex])
+      mode = 'terminal'
+      menuIndex = 0
     }
+    updateDisplay()
     return
   }
 })
