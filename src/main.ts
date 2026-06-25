@@ -230,10 +230,12 @@ function connect() {
 
 connect()
 
+function isEvent(event: any, type: OsEventTypeList): boolean {
+  return event.sysEvent?.eventType === type || event.textEvent?.eventType === type
+}
+
 const unsubscribe = bridge.onEvenHubEvent(event => {
   const sysType = event.sysEvent?.eventType ?? null
-  const textType = event.textEvent?.eventType ?? null
-  const type = sysType ?? textType
 
   if (sysType === OsEventTypeList.SYSTEM_EXIT_EVENT || sysType === OsEventTypeList.ABNORMAL_EXIT_EVENT) {
     ws?.close()
@@ -247,20 +249,19 @@ const unsubscribe = bridge.onEvenHubEvent(event => {
     return
   }
 
-  if (type === OsEventTypeList.DOUBLE_CLICK_EVENT) {
+  if (isEvent(event, OsEventTypeList.DOUBLE_CLICK_EVENT)) {
     if (mode === 'menu1' || mode === 'menu2') {
       mode = 'terminal'
       menuIndex = 0
-      updateDisplay()
     } else if (mode === 'terminal') {
       mode = 'menu2'
       menuIndex = 0
-      updateDisplay()
     }
+    updateDisplay()
     return
   }
 
-  if (type === OsEventTypeList.CLICK_EVENT) {
+  if (isEvent(event, OsEventTypeList.CLICK_EVENT)) {
     if (mode === 'recording') {
       stopRecording()
     } else if (mode === 'terminal') {
@@ -273,7 +274,7 @@ const unsubscribe = bridge.onEvenHubEvent(event => {
     return
   }
 
-  if (type === OsEventTypeList.SCROLL_TOP_EVENT) {
+  if (isEvent(event, OsEventTypeList.SCROLL_TOP_EVENT)) {
     if (mode === 'menu1' || mode === 'menu2') {
       menuIndex = Math.max(menuIndex - 1, 0)
     } else if (mode === 'terminal') {
@@ -283,7 +284,7 @@ const unsubscribe = bridge.onEvenHubEvent(event => {
     return
   }
 
-  if (type === OsEventTypeList.SCROLL_BOTTOM_EVENT) {
+  if (isEvent(event, OsEventTypeList.SCROLL_BOTTOM_EVENT)) {
     if (mode === 'menu1' || mode === 'menu2') {
       const items = mode === 'menu1' ? MENU1_ITEMS : MENU2_ITEMS
       menuIndex = Math.min(menuIndex + 1, items.length - 1)
