@@ -2,118 +2,530 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Telehack Input</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Telehack Terminal</title>
   <style>
-    body {
-      background: #000;
-      color: #00ff00;
-      font-family: monospace;
-      font-size: 18px;
-      padding: 20px;
-      margin: 0;
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --green: #00ff41;
+      --green-dim: #00aa2b;
+      --green-glow: rgba(0, 255, 65, 0.15);
+      --bg: #0a0a0a;
+      --bg-panel: #0d0d0d;
     }
+
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--green);
+      font-family: 'Courier New', Courier, monospace;
+      overflow: hidden;
+      -webkit-text-size-adjust: 100%;
+      touch-action: manipulation;
+    }
+
+    body::after {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background: repeating-linear-gradient(
+        0deg, transparent, transparent 2px,
+        rgba(0,0,0,0.07) 2px, rgba(0,0,0,0.07) 4px
+      );
+      pointer-events: none;
+      z-index: 100;
+    }
+
+    #app {
+      display: flex;
+      flex-direction: column;
+      height: 100dvh;
+      padding-top: env(safe-area-inset-top, 0px);
+      padding-left: env(safe-area-inset-left, 0px);
+      padding-right: env(safe-area-inset-right, 0px);
+    }
+
+    /* Header */
+    #header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 14px;
+      border-bottom: 1px solid var(--green-dim);
+      flex-shrink: 0;
+      background: var(--bg-panel);
+    }
+    #header-title { font-size: 13px; letter-spacing: 0.15em; text-shadow: 0 0 8px var(--green); }
+    #status { font-size: 11px; letter-spacing: 0.1em; display: flex; align-items: center; gap: 6px; color: var(--green-dim); }
+    #status-dot { width: 7px; height: 7px; border-radius: 50%; background: #444; transition: background 0.3s, box-shadow 0.3s; }
+    #status-dot.connected { background: var(--green); box-shadow: 0 0 6px var(--green); animation: pulse 2s ease-in-out infinite; }
+    #status-dot.error { background: #ff3333; box-shadow: 0 0 6px #ff3333; }
+    @keyframes pulse { 0%,100% { opacity:1 } 50% { opacity:0.5 } }
+
+    /* Tab bar */
+    #tabs {
+      display: flex;
+      border-bottom: 1px solid var(--green-dim);
+      background: var(--bg-panel);
+      flex-shrink: 0;
+    }
+    .tab {
+      flex: 1;
+      padding: 9px 0;
+      text-align: center;
+      font-size: 11px;
+      letter-spacing: 0.12em;
+      color: #1a5a1a;
+      border: none;
+      background: transparent;
+      font-family: 'Courier New', Courier, monospace;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
+      transition: color 0.15s;
+    }
+    .tab.active { color: var(--green); border-bottom: 2px solid var(--green); margin-bottom: -1px; }
+
+    /* Pages */
+    #page-terminal, #page-relay {
+      display: flex;
+      flex-direction: column;
+      flex: 1;
+      min-height: 0;
+    }
+    #page-relay { display: none; }
+
+    /* ── TERMINAL PAGE ── */
+    #log-wrap { flex: 1; overflow: hidden; position: relative; min-height: 0; }
     #log {
-      height: calc(100vh - 100px);
+      height: 100%;
       overflow-y: auto;
+      padding: 10px 12px;
+      font-size: 12px;
+      line-height: 1.5;
       white-space: pre-wrap;
       word-break: break-all;
-      margin-bottom: 10px;
-      border-bottom: 1px solid #00ff00;
-      padding-bottom: 10px;
+      color: var(--green);
+      text-shadow: 0 0 4px rgba(0,255,65,0.4);
+      -webkit-overflow-scrolling: touch;
     }
-    #inputRow {
+    #log::-webkit-scrollbar { width: 3px; }
+    #log::-webkit-scrollbar-thumb { background: var(--green-dim); border-radius: 2px; }
+    #log-wrap::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0; height: 30px;
+      background: linear-gradient(to bottom, var(--bg), transparent);
+      pointer-events: none;
+      z-index: 1;
+    }
+
+    #input-section {
+      flex-shrink: 0;
+      background: var(--bg-panel);
+      border-top: 1px solid var(--green-dim);
+      padding: 8px 10px;
+      padding-bottom: max(8px, env(safe-area-inset-bottom));
+    }
+    #input-row {
       display: flex;
-      gap: 8px;
-    }
-    input {
-      flex: 1;
-      background: #000;
-      color: #00ff00;
-      border: 1px solid #00ff00;
-      font-family: monospace;
-      font-size: 18px;
-      padding: 6px;
-      outline: none;
-    }
-    button {
-      background: #00ff00;
-      color: #000;
-      border: none;
-      font-family: monospace;
-      font-size: 18px;
-      padding: 6px 14px;
-      cursor: pointer;
-    }
-    #status {
-      color: #ff0;
+      align-items: center;
+      gap: 6px;
       margin-bottom: 8px;
-      font-size: 14px;
+      background: #111;
+      border: 1px solid var(--green-dim);
+      border-radius: 4px;
+      padding: 4px 8px;
     }
+    #input-row:focus-within { border-color: var(--green); box-shadow: 0 0 10px var(--green-glow); }
+    #prompt-char { color: var(--green); font-size: 16px; text-shadow: 0 0 6px var(--green); flex-shrink: 0; user-select: none; }
+    #cmd {
+      flex: 1;
+      background: transparent; border: none; outline: none;
+      color: var(--green);
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 16px;
+      caret-color: var(--green);
+      -webkit-appearance: none;
+    }
+    #cmd::placeholder { color: #1a4a1a; }
+    .send-btn {
+      flex-shrink: 0;
+      background: var(--green); color: #000;
+      border: none; border-radius: 3px;
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 13px; font-weight: bold;
+      padding: 6px 12px; cursor: pointer;
+      letter-spacing: 0.05em;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
+    }
+    .send-btn:active { opacity: 0.7; }
+    #quickkeys { display: flex; gap: 5px; }
+    .qkey {
+      flex: 1; min-width: 0;
+      background: #111; color: var(--green-dim);
+      border: 1px solid #1a3a1a; border-radius: 4px;
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 12px; padding: 9px 4px;
+      cursor: pointer; text-align: center;
+      letter-spacing: 0.05em;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation; white-space: nowrap;
+    }
+    .qkey:active { border-color: var(--green); color: var(--green); }
+
+    /* ── RELAY PAGE ── */
+    #relay-log-wrap { flex: 1; overflow: hidden; position: relative; min-height: 0; }
+    #relay-log {
+      height: 100%;
+      overflow-y: auto;
+      padding: 10px 12px;
+      font-size: 12px;
+      line-height: 1.6;
+      -webkit-overflow-scrolling: touch;
+    }
+    #relay-log::-webkit-scrollbar { width: 3px; }
+    #relay-log::-webkit-scrollbar-thumb { background: var(--green-dim); border-radius: 2px; }
+    #relay-log-wrap::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0; height: 30px;
+      background: linear-gradient(to bottom, var(--bg), transparent);
+      pointer-events: none;
+      z-index: 1;
+    }
+    .relay-msg {
+      margin-bottom: 10px;
+      padding: 6px 8px;
+      border-left: 2px solid var(--green-dim);
+      border-radius: 0 3px 3px 0;
+    }
+    .relay-msg.incoming { border-left-color: var(--green); }
+    .relay-msg.outgoing { border-left-color: #005a15; color: #009a25; }
+    .relay-sender { font-size: 10px; color: var(--green-dim); letter-spacing: 0.1em; margin-bottom: 3px; }
+    .relay-msg.incoming .relay-sender { color: var(--green); text-shadow: 0 0 4px var(--green); }
+    .relay-text { font-size: 13px; word-break: break-word; }
+
+    #relay-compose {
+      flex-shrink: 0;
+      background: var(--bg-panel);
+      border-top: 1px solid var(--green-dim);
+      padding: 8px 10px;
+      padding-bottom: max(8px, env(safe-area-inset-bottom));
+    }
+
+    /* Saved contacts row */
+    #contacts-row {
+      display: flex;
+      gap: 5px;
+      margin-bottom: 8px;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      padding-bottom: 2px;
+    }
+    #contacts-row::-webkit-scrollbar { display: none; }
+    .contact-btn {
+      flex-shrink: 0;
+      background: #111;
+      color: var(--green-dim);
+      border: 1px solid #1a3a1a;
+      border-radius: 12px;
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 11px;
+      padding: 5px 11px;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
+      transition: border-color 0.1s, color 0.1s;
+    }
+    .contact-btn.selected, .contact-btn:active {
+      border-color: var(--green);
+      color: var(--green);
+    }
+
+    /* To: field */
+    #to-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 6px;
+      background: #111;
+      border: 1px solid #1a3a1a;
+      border-radius: 4px;
+      padding: 4px 8px;
+    }
+    #to-row:focus-within { border-color: var(--green-dim); }
+    #to-label { font-size: 11px; color: #005a15; letter-spacing: 0.1em; flex-shrink: 0; }
+    #to-input {
+      flex: 1;
+      background: transparent; border: none; outline: none;
+      color: var(--green);
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 14px;
+      caret-color: var(--green);
+      -webkit-appearance: none;
+      autocapitalize: none; autocorrect: off; spellcheck: false;
+    }
+    #to-input::placeholder { color: #1a3a1a; }
+
+    /* Message row */
+    #msg-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: #111;
+      border: 1px solid var(--green-dim);
+      border-radius: 4px;
+      padding: 4px 8px;
+    }
+    #msg-row:focus-within { border-color: var(--green); box-shadow: 0 0 10px var(--green-glow); }
+    #relay-prompt { color: var(--green); font-size: 16px; text-shadow: 0 0 6px var(--green); flex-shrink: 0; user-select: none; }
+    #msg-input {
+      flex: 1;
+      background: transparent; border: none; outline: none;
+      color: var(--green);
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 16px;
+      caret-color: var(--green);
+      -webkit-appearance: none;
+      autocapitalize: none; autocorrect: off; spellcheck: false;
+    }
+    #msg-input::placeholder { color: #1a4a1a; }
+
+    /* Corner decorations */
+    .corner { position: fixed; width: 14px; height: 14px; border-color: var(--green-dim); border-style: solid; opacity: 0.4; pointer-events: none; z-index: 50; }
+    .corner.tl { top: 6px; left: 6px; border-width: 1px 0 0 1px; }
+    .corner.tr { top: 6px; right: 6px; border-width: 1px 1px 0 0; }
+    .corner.bl { bottom: 6px; left: 6px; border-width: 0 0 1px 1px; }
+    .corner.br { bottom: 6px; right: 6px; border-width: 0 1px 1px 0; }
   </style>
 </head>
 <body>
-  <div id="status">Connecting...</div>
-  <div id="log"></div>
-  <div id="inputRow">
-    <input id="cmd" type="text" placeholder="type command here" autofocus />
-    <button onclick="sendCmd()">Send</button>
-    <button onclick="sendRaw(' ')">Space</button>
-    <button onclick="sendRaw('\x03')">Ctrl+C</button>
+  <div class="corner tl"></div><div class="corner tr"></div>
+  <div class="corner bl"></div><div class="corner br"></div>
+
+  <div id="app">
+    <div id="header">
+      <span id="header-title">&#9632; TELEHACK TERMINAL</span>
+      <span id="status">
+        <span id="status-dot"></span>
+        <span id="status-text">CONNECTING</span>
+      </span>
+    </div>
+
+    <div id="tabs">
+      <button class="tab active" onclick="switchTab('terminal')">TERMINAL</button>
+      <button class="tab" onclick="switchTab('relay')" id="relay-tab">RELAY</button>
+    </div>
+
+    <!-- Terminal page -->
+    <div id="page-terminal">
+      <div id="log-wrap"><div id="log"></div></div>
+      <div id="input-section">
+        <div id="input-row">
+          <span id="prompt-char">&#9658;</span>
+          <input id="cmd" type="text" placeholder="enter command..."
+            autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" />
+          <button class="send-btn" onclick="sendCmd()">SEND</button>
+        </div>
+        <div id="quickkeys">
+          <button class="qkey" onclick="sendRaw(' ')">SPACE</button>
+          <button class="qkey" onclick="sendRaw('\t')">TAB</button>
+          <button class="qkey" onclick="sendRaw('\x03')">^C</button>
+          <button class="qkey" onclick="sendRaw('\x04')">^D</button>
+          <button class="qkey" onclick="sendRaw('\x1b')">ESC</button>
+          <button class="qkey" onclick="scrollLog(-1)">&#9650;</button>
+          <button class="qkey" onclick="scrollLog(1)">&#9660;</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Relay page -->
+    <div id="page-relay">
+      <div id="relay-log-wrap"><div id="relay-log"></div></div>
+      <div id="relay-compose">
+        <div id="contacts-row" id="contacts-row"></div>
+        <div id="to-row">
+          <span id="to-label">TO:</span>
+          <input id="to-input" type="text" placeholder="username"
+            autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" />
+        </div>
+        <div id="msg-row">
+          <span id="relay-prompt">&#9658;</span>
+          <input id="msg-input" type="text" placeholder="message..."
+            autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" />
+          <button class="send-btn" onclick="sendRelay()">RELAY</button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <script>
-    const log = document.getElementById('log')
-    const status = document.getElementById('status')
-    const cmd = document.getElementById('cmd')
+    const logEl = document.getElementById('log')
+    const relayLogEl = document.getElementById('relay-log')
+    const statusDot = document.getElementById('status-dot')
+    const statusText = document.getElementById('status-text')
+    const cmdEl = document.getElementById('cmd')
+    const toEl = document.getElementById('to-input')
+    const msgEl = document.getElementById('msg-input')
+    const relayTab = document.getElementById('relay-tab')
+    const contactsRow = document.getElementById('contacts-row')
+
+    // Saved contacts (persisted in localStorage)
+    let contacts = JSON.parse(localStorage.getItem('relay-contacts') || '[]')
+    let relayUnread = 0
+
+    function renderContacts() {
+      contactsRow.innerHTML = ''
+      contacts.forEach(name => {
+        const btn = document.createElement('button')
+        btn.className = 'contact-btn'
+        btn.textContent = name
+        btn.onclick = () => {
+          document.querySelectorAll('.contact-btn').forEach(b => b.classList.remove('selected'))
+          btn.classList.add('selected')
+          toEl.value = name
+        }
+        contactsRow.appendChild(btn)
+      })
+    }
+    renderContacts()
+
+    function addContact(name) {
+      if (!name || contacts.includes(name)) return
+      contacts.push(name)
+      localStorage.setItem('relay-contacts', JSON.stringify(contacts))
+      renderContacts()
+    }
+
+    function switchTab(tab) {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'))
+      document.getElementById('page-terminal').style.display = tab === 'terminal' ? 'flex' : 'none'
+      document.getElementById('page-relay').style.display = tab === 'relay' ? 'flex' : 'none'
+      if (tab === 'terminal') {
+        document.querySelectorAll('.tab')[0].classList.add('active')
+      } else {
+        document.querySelectorAll('.tab')[1].classList.add('active')
+        relayUnread = 0
+        relayTab.textContent = 'RELAY'
+      }
+    }
+
+    function setStatus(state, label) {
+      statusDot.className = state
+      statusText.textContent = label
+    }
 
     function stripAnsi(str) {
       return str.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '')
-                .replace(/\r\n/g, '\n')
-                .replace(/\r/g, '\n')
-                .replace(/\x00/g, '')
+                .replace(/\r\n/g, '\n').replace(/\r/g, '\n').replace(/\x00/g, '')
     }
 
-    const ws = new WebSocket('wss://telehack-g2-production.up.railway.app')
-
-    ws.onopen = () => {
-      status.textContent = 'Connected to Telehack'
-      setInterval(() => { if (ws.readyState === WebSocket.OPEN) ws.send('\x00PING') }, 1000)
+    function appendLog(text) {
+      const atBottom = logEl.scrollHeight - logEl.scrollTop - logEl.clientHeight < 40
+      logEl.textContent += stripAnsi(text)
+      if (atBottom) logEl.scrollTop = logEl.scrollHeight
     }
-    ws.onclose = () => { status.textContent = 'Disconnected' }
-    ws.onerror = () => { status.textContent = 'Connection error' }
 
-    ws.onmessage = (event) => {
-      if (event.data === '\x00PING') return
-      if (event.data.startsWith('\x00PREVIEW:')) return
-      log.textContent += stripAnsi(event.data)
-      log.scrollTop = log.scrollHeight
+    function appendRelayMsg(sender, message, outgoing) {
+      const div = document.createElement('div')
+      div.className = 'relay-msg ' + (outgoing ? 'outgoing' : 'incoming')
+      div.innerHTML = `<div class="relay-sender">${outgoing ? 'YOU → ' + sender : sender}</div><div class="relay-text">${escHtml(message)}</div>`
+      relayLogEl.appendChild(div)
+      relayLogEl.scrollTop = relayLogEl.scrollHeight
+
+      // Badge the tab if we're not on relay page
+      if (!outgoing && document.getElementById('page-relay').style.display === 'none') {
+        relayUnread++
+        relayTab.textContent = `RELAY [${relayUnread}]`
+      }
+
+      // Auto-save sender as contact
+      if (!outgoing) addContact(sender)
+    }
+
+    function escHtml(str) {
+      return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    }
+
+    function scrollLog(dir) {
+      logEl.scrollTop += dir * logEl.clientHeight * 0.6
+    }
+
+    const WS_URL = 'wss://telehack-g2-production.up.railway.app'
+    let ws
+
+    function connect() {
+      setStatus('', 'CONNECTING')
+      ws = new WebSocket(WS_URL)
+
+      ws.onopen = () => {
+        setStatus('connected', 'ONLINE')
+        setInterval(() => { if (ws.readyState === WebSocket.OPEN) ws.send('\x00PING') }, 1000)
+      }
+      ws.onclose = () => { setStatus('error', 'OFFLINE'); setTimeout(connect, 3000) }
+      ws.onerror = () => { setStatus('error', 'ERROR') }
+
+      ws.onmessage = (event) => {
+        const data = event.data
+        if (data === '\x00PING') return
+        if (data.startsWith('\x00PREVIEW:')) return
+
+        if (data.startsWith('\x00RELAY:')) {
+          // Format: \x00RELAY:sender:message
+          const rest = data.slice(7)
+          const colon = rest.indexOf(':')
+          const sender = rest.slice(0, colon)
+          const message = rest.slice(colon + 1)
+          appendRelayMsg(sender, message, false)
+          return
+        }
+
+        appendLog(data)
+      }
     }
 
     function sendRaw(text) {
-      if (ws.readyState === WebSocket.OPEN) ws.send(text)
+      if (ws && ws.readyState === WebSocket.OPEN) ws.send(text)
     }
 
     function sendCmd() {
-      const text = cmd.value
-      if (text && ws.readyState === WebSocket.OPEN) {
+      const text = cmdEl.value.trim()
+      if (!text) return
+      if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(text)
-        cmd.value = ''
         ws.send('\x00PREVIEW:')
+        cmdEl.value = ''
       }
     }
 
-    cmd.addEventListener('input', () => {
-      if (ws.readyState === WebSocket.OPEN) ws.send('\x00PREVIEW:' + cmd.value)
+    function sendRelay() {
+      const to = toEl.value.trim()
+      const msg = msgEl.value.trim()
+      if (!to || !msg) return
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(`relay ${to} ${msg}`)
+        appendRelayMsg(to, msg, true)
+        addContact(to)
+        msgEl.value = ''
+        msgEl.focus()
+      }
+    }
+
+    cmdEl.addEventListener('input', () => {
+      if (ws && ws.readyState === WebSocket.OPEN) ws.send('\x00PREVIEW:' + cmdEl.value)
+    })
+    cmdEl.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); sendCmd() }
+      if (e.key === 'c' && e.ctrlKey) { e.preventDefault(); sendRaw('\x03') }
+    })
+    msgEl.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); sendRelay() }
     })
 
-    cmd.addEventListener('keydown', e => {
-      if (e.key === 'Enter') sendCmd()
-      if (e.key === 'c' && e.ctrlKey) {
-        e.preventDefault()
-        sendRaw('\x03')
-      }
-    })
+    connect()
   </script>
 </body>
 </html>

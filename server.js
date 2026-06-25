@@ -85,6 +85,14 @@ function connectTelehack() {
     if (text.length > 0) {
       handleAutoLogin(text)
       broadcast(text)
+      // Detect relay messages: lines matching "*username relays* message"
+      const lines = text.split(/\r?\n/)
+      for (const line of lines) {
+        const m = line.match(/^\*(\S+)\s+relays\*\s+(.+)$/i)
+        if (m) {
+          broadcast(`\x00RELAY:${m[1]}:${m[2].trim()}`)
+        }
+      }
     }
   })
 

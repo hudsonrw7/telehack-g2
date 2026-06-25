@@ -36,11 +36,22 @@ await bridge.createStartUpPageContainer(
 )
 
 let hasNewContent = false
+let relayNotification = ''
+let relayTimer: ReturnType<typeof setTimeout> | null = null
+
+function setRelayNotification(sender: string, message: string) {
+  relayNotification = `[MSG] ${sender}: ${message}`
+  if (relayTimer) clearTimeout(relayTimer)
+  relayTimer = setTimeout(() => {
+    relayNotification = ''
+    updateDisplay()
+  }, 8000)
+}
 
 function updateDisplay() {
   const total = lines.length
   const end = Math.max(total - scrollOffset, 0)
-  const reservedLines = (inputPreview ? 1 : 0) + (currentLine.trim() ? 1 : 0)
+  const reservedLines = (inputPreview ? 1 : 0) + (currentLine.trim() ? 1 : 0) + (relayNotification ? 1 : 0)
   const visibleCount = Math.max(VISIBLE_LINES - reservedLines, 1)
   const start = Math.max(end - visibleCount, 0)
   const visible = lines.slice(start, end).join('\n')
@@ -48,9 +59,10 @@ function updateDisplay() {
   const indicator = scrolled ? `[+${scrollOffset}${hasNewContent ? ' NEW↓' : ''}]\n` : ''
   const current = currentLine.trim() ? `\n${currentLine.trim()}` : ''
   const preview = inputPreview ? `\n> ${inputPreview}` : ''
+  const notify = relayNotification ? `${relayNotification}\n` : ''
   bridge.textContainerUpgrade(new TextContainerUpgrade({
     containerID: 1,
-    content: indicator + visible + current + preview,
+    content: notify + indicator + visible + current + preview,
   }))
 }
 
@@ -113,6 +125,12 @@ function connect() {
     if (text === '\x00PING') return
     if (text.startsWith('\x00PREVIEW:')) {
       inputPreview = text.slice(9)
+      updateDisplay()
+    } else if (text.startsWith('\x00RELAY:')) {
+      const parts = text.slice(7).split(':')
+      const sender = parts[0]
+      const message = parts.slice(1).join(':')
+      setRelayNotification(sender, message)
       updateDisplay()
     } else {
       processOutput(text)
