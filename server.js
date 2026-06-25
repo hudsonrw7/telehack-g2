@@ -2,7 +2,6 @@ import { WebSocketServer } from 'ws'
 import { Client } from 'ssh2'
 
 const PORT = process.env.PORT || 8080
-const TELEHACK_USER = process.env.TELEHACK_USER || 'guest'
 const TELEHACK_PASS = process.env.TELEHACK_PASS || ''
 
 const wss = new WebSocketServer({ port: PORT, perMessageDeflate: false })
@@ -68,7 +67,7 @@ function connectTelehack() {
   conn.connect({
     host: 'telehack.com',
     port: 2222,
-    username: TELEHACK_USER,
+    username: 'guest',
     password: TELEHACK_PASS,
     readyTimeout: 10000,
   })
