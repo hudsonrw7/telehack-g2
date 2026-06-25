@@ -69,7 +69,10 @@
 
     const ws = new WebSocket('wss://telehack-g2-production.up.railway.app')
 
-    ws.onopen = () => { status.textContent = 'Connected to Telehack' }
+    ws.onopen = () => {
+      status.textContent = 'Connected to Telehack'
+      setInterval(() => { if (ws.readyState === WebSocket.OPEN) ws.send('\x00PING') }, 1000)
+    }
     ws.onclose = () => { status.textContent = 'Disconnected' }
     ws.onerror = () => { status.textContent = 'Connection error' }
 

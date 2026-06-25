@@ -50,7 +50,11 @@ function connectTelehack() {
   socket.on('data', data => {
     const text = stripTelnet(data)
     if (text.length > 0) {
-      broadcast(text)
+      let sent = 0
+      for (const ws of clients) {
+        if (ws.readyState === 1) { ws.send(text); sent++ }
+      }
+      console.log(`Broadcast to ${sent}/${clients.size} clients: ${JSON.stringify(text.slice(0, 40))}`)
     }
   })
 
@@ -80,6 +84,7 @@ wss.on('connection', ws => {
 
   ws.on('message', msg => {
     const text = msg.toString()
+    if (text === '\x00PING') return
     if (text.startsWith('\x00PREVIEW:')) {
       for (const client of clients) {
         if (client !== ws && client.readyState === 1) client.send(text)

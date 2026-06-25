@@ -105,6 +105,7 @@ function connect() {
   ws.onopen = () => {
     lines.push('Connected to Telehack.')
     updateDisplay()
+    setInterval(() => { if (ws.readyState === 1) ws.send('\x00PING') }, 1000)
   }
 
   ws.onmessage = (event) => {
