@@ -2,7 +2,7 @@ import { WebSocketServer } from 'ws'
 import net from 'net'
 
 const PORT = process.env.PORT || 8080
-const wss = new WebSocketServer({ port: PORT })
+const wss = new WebSocketServer({ port: PORT, perMessageDeflate: false })
 console.log(`Server running on port ${PORT}`)
 
 function stripTelnet(buf) {
@@ -49,8 +49,6 @@ function connectTelehack() {
 
   socket.on('data', data => {
     const text = stripTelnet(data)
-    console.log('RAW:', JSON.stringify(data.slice(0, 40).toString('binary')))
-    console.log('STRIPPED:', JSON.stringify(text.slice(0, 80)))
     if (text.length > 0) {
       broadcast(text)
     }
