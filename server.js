@@ -93,7 +93,7 @@ wss.on('connection', ws => {
         if (client !== ws && client.readyState === 1) client.send(text)
       }
     } else if (sshStream && !sshStream.destroyed) {
-      sshStream.write(text + '\r\n')
+      sshStream.write(text + '\r')
     }
   })
 
