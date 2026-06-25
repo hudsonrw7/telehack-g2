@@ -1,8 +1,9 @@
 import { WebSocketServer } from 'ws'
 import net from 'net'
 
-const wss = new WebSocketServer({ port: 8080 })
-console.log('Server running on ws://localhost:8080')
+const PORT = process.env.PORT || 8080
+const wss = new WebSocketServer({ port: PORT })
+console.log(`Server running on port ${PORT}`)
 
 function stripTelnet(buf) {
   const out = []
