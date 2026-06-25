@@ -230,12 +230,9 @@ function connect() {
 
 connect()
 
-function isEvent(event: any, type: OsEventTypeList): boolean {
-  return event.sysEvent?.eventType === type || event.textEvent?.eventType === type
-}
-
 const unsubscribe = bridge.onEvenHubEvent(event => {
   const sysType = event.sysEvent?.eventType ?? null
+  const textType = event.textEvent?.eventType ?? null
 
   if (sysType === OsEventTypeList.SYSTEM_EXIT_EVENT || sysType === OsEventTypeList.ABNORMAL_EXIT_EVENT) {
     ws?.close()
@@ -243,13 +240,12 @@ const unsubscribe = bridge.onEvenHubEvent(event => {
     return
   }
 
-  // Collect PCM while recording
   if (mode === 'recording' && event.audioEvent?.audioPcm) {
     pcmChunks.push(...event.audioEvent.audioPcm)
     return
   }
 
-  if (isEvent(event, OsEventTypeList.DOUBLE_CLICK_EVENT)) {
+  if (sysType === OsEventTypeList.DOUBLE_CLICK_EVENT || textType === OsEventTypeList.DOUBLE_CLICK_EVENT) {
     if (mode === 'menu1' || mode === 'menu2') {
       mode = 'terminal'
       menuIndex = 0
@@ -261,20 +257,7 @@ const unsubscribe = bridge.onEvenHubEvent(event => {
     return
   }
 
-  if (isEvent(event, OsEventTypeList.CLICK_EVENT)) {
-    if (mode === 'recording') {
-      stopRecording()
-    } else if (mode === 'terminal') {
-      mode = 'menu1'
-      menuIndex = 0
-      updateDisplay()
-    } else if (mode === 'menu1' || mode === 'menu2') {
-      selectMenuItem()
-    }
-    return
-  }
-
-  if (isEvent(event, OsEventTypeList.SCROLL_TOP_EVENT)) {
+  if (sysType === OsEventTypeList.SCROLL_TOP_EVENT || textType === OsEventTypeList.SCROLL_TOP_EVENT) {
     if (mode === 'menu1' || mode === 'menu2') {
       menuIndex = Math.max(menuIndex - 1, 0)
     } else if (mode === 'terminal') {
@@ -284,7 +267,7 @@ const unsubscribe = bridge.onEvenHubEvent(event => {
     return
   }
 
-  if (isEvent(event, OsEventTypeList.SCROLL_BOTTOM_EVENT)) {
+  if (sysType === OsEventTypeList.SCROLL_BOTTOM_EVENT || textType === OsEventTypeList.SCROLL_BOTTOM_EVENT) {
     if (mode === 'menu1' || mode === 'menu2') {
       const items = mode === 'menu1' ? MENU1_ITEMS : MENU2_ITEMS
       menuIndex = Math.min(menuIndex + 1, items.length - 1)
@@ -292,6 +275,19 @@ const unsubscribe = bridge.onEvenHubEvent(event => {
       scrollOffset = Math.max(scrollOffset - VISIBLE_LINES, 0)
     }
     updateDisplay()
+    return
+  }
+
+  if (sysType === OsEventTypeList.CLICK_EVENT || textType === OsEventTypeList.CLICK_EVENT) {
+    if (mode === 'recording') {
+      stopRecording()
+    } else if (mode === 'terminal') {
+      mode = 'menu1'
+      menuIndex = 0
+      updateDisplay()
+    } else if (mode === 'menu1' || mode === 'menu2') {
+      selectMenuItem()
+    }
     return
   }
 })
