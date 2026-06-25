@@ -67,6 +67,13 @@ function connectTelehack() {
 
 connectTelehack()
 
+// flush Railway's proxy buffer every second
+setInterval(() => {
+  for (const ws of clients) {
+    if (ws.readyState === 1) ws.send('\x00PING')
+  }
+}, 1000)
+
 wss.on('connection', ws => {
   console.log('Client connected, total:', clients.size + 1)
   clients.add(ws)

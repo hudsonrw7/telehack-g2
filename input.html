@@ -74,6 +74,7 @@
     ws.onerror = () => { status.textContent = 'Connection error' }
 
     ws.onmessage = (event) => {
+      if (event.data === '\x00PING') return
       log.textContent += event.data
       log.scrollTop = log.scrollHeight
     }

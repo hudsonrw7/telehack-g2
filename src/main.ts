@@ -109,6 +109,7 @@ function connect() {
 
   ws.onmessage = (event) => {
     const text: string = event.data
+    if (text === '\x00PING') return
     if (text.startsWith('\x00PREVIEW:')) {
       inputPreview = text.slice(9)
       updateDisplay()
