@@ -17,13 +17,35 @@ let hasNewContent = false
 let relayNotification = ''
 let relayTimer: ReturnType<typeof setTimeout> | null = null
 
-type Mode = 'terminal' | 'menu1' | 'menu2'
+type Mode = 'terminal' | 'animating' | 'userlist'
 let mode: Mode = 'terminal'
-let menuIndex = 0
-let lastEvent = ''  // debug: shows last event type on display
+let animTimer: ReturnType<typeof setTimeout> | null = null
 
-const MENU1_ITEMS = ['login', 'w', 'relay', 'send', 'porthack']
-const MENU2_ITEMS = ['wardial', 'score /badge', 'space', 'ctrl+c', 'finger']
+const ANIMATION_FRAMES: [string, number][] = [
+  [`> BOOTING ARPANET...\n> ROUTING PACKETS..\n> BYPASSING AUTH...\n[          ]   0%`, 350],
+  [`> BOOTING ARPANET...\n> ROUTING PACKETS..\n> BYPASSING AUTH...\n[###       ]  30%`, 350],
+  [`> BOOTING ARPANET...\n> ROUTING PACKETS..\n> BYPASSING AUTH...\n[######    ]  60%`, 350],
+  [`> BOOTING ARPANET...\n> ROUTING PACKETS..\n> BYPASSING AUTH...\n[#########]   90%`, 350],
+  [`> BOOTING ARPANET...\n> ROUTING PACKETS..\n> BYPASSING AUTH...\n[##########] 100%`, 500],
+  [`!!!! BREACH !!!!!\n!!!! BREACH !!!!!\n!!!! BREACH !!!!!\n!!!! BREACH !!!!!`, 200],
+  [`\n\n!!!! BREACH !!!!!`, 150],
+  [`!!!! BREACH !!!!!\n!!!! BREACH !!!!!\n!!!! BREACH !!!!!\n!!!! BREACH !!!!!`, 150],
+  [`\n\n!!!! BREACH !!!!!`, 150],
+  [`!!!! BREACH !!!!!\n!!!! BREACH !!!!!\n!!!! BREACH !!!!!\n!!!! BREACH !!!!!`, 300],
+  [`\n  ACCESS GRANTED\n  *** TELEHACK ***\n WELCOME, HACKER.`, 600],
+  [`\n  ACCESS GRANTED\n  *** TELEHACK ***\n WELCOME, HACKER._`, 400],
+  [`\n  ACCESS GRANTED\n  *** TELEHACK ***\n WELCOME, HACKER.`, 400],
+  [`\n  ACCESS GRANTED\n  *** TELEHACK ***\n WELCOME, HACKER._`, 400],
+]
+
+const USER_LIST =
+  `-- FAMOUS USERS --\n` +
+  `  Forbin\n` +
+  `  Bobbinz\n` +
+  `  Underwood\n` +
+  `  Egroj\n` +
+  `  zcj\n` +
+  `  Indygo`
 
 const textContainer = new TextContainerProperty({
   xPosition: 0,
@@ -46,6 +68,10 @@ await bridge.createStartUpPageContainer(
   })
 )
 
+function show(content: string) {
+  bridge.textContainerUpgrade(new TextContainerUpgrade({ containerID: 1, content }))
+}
+
 function setRelayNotification(sender: string, message: string) {
   relayNotification = `[MSG] ${sender}: ${message}`
   if (relayTimer) clearTimeout(relayTimer)
@@ -56,43 +82,51 @@ function setRelayNotification(sender: string, message: string) {
 }
 
 function updateDisplay() {
-  let content: string
-
-  if (mode === 'menu1' || mode === 'menu2') {
-    const items = mode === 'menu1' ? MENU1_ITEMS : MENU2_ITEMS
-    const label = mode === 'menu1' ? '--- COMMANDS ---' : '--- ACTIONS ---'
-    const rows = items.map((item, i) =>
-      (i === menuIndex ? '> ' : '  ') + item.toUpperCase()
-    )
-    content = label + '\n' + rows.join('\n')
-  } else {
-    const total = lines.length
-    const end = Math.max(total - scrollOffset, 0)
-    const reservedLines = (inputPreview ? 1 : 0) + (currentLine.trim() ? 1 : 0) + (relayNotification ? 1 : 0)
-    const visibleCount = Math.max(VISIBLE_LINES - reservedLines, 1)
-    const start = Math.max(end - visibleCount, 0)
-    const visible = lines.slice(start, end).join('\n')
-    const indicator = scrollOffset > 0 ? `[+${scrollOffset}${hasNewContent ? ' NEW↓' : ''}]\n` : ''
-    const current = currentLine.trim() ? `\n${currentLine.trim()}` : ''
-    const preview = inputPreview ? `\n> ${inputPreview}` : ''
-    const notify = relayNotification ? `${relayNotification}\n` : ''
-    content = notify + indicator + visible + current + preview
-  }
-
-  // debug line — remove once menus are confirmed working
-  content = `[${lastEvent}]\n` + content
-
-  bridge.textContainerUpgrade(new TextContainerUpgrade({ containerID: 1, content }))
+  const total = lines.length
+  const end = Math.max(total - scrollOffset, 0)
+  const reservedLines = (inputPreview ? 1 : 0) + (currentLine.trim() ? 1 : 0) + (relayNotification ? 1 : 0)
+  const visibleCount = Math.max(VISIBLE_LINES - reservedLines, 1)
+  const start = Math.max(end - visibleCount, 0)
+  const visible = lines.slice(start, end).join('\n')
+  const indicator = scrollOffset > 0 ? `[+${scrollOffset}${hasNewContent ? ' NEW↓' : ''}]\n` : ''
+  const current = currentLine.trim() ? `\n${currentLine.trim()}` : ''
+  const preview = inputPreview ? `\n> ${inputPreview}` : ''
+  const notify = relayNotification ? `${relayNotification}\n` : ''
+  show(notify + indicator + visible + current + preview)
 }
 
-function sendCommand(cmd: string) {
-  if (cmd === 'space') {
-    ws?.send('\x00RAW: ')
-  } else if (cmd === 'ctrl+c') {
-    ws?.send('\x00RAW:\x03')
-  } else {
-    ws?.send(cmd)
+function clearAnimTimer() {
+  if (animTimer) { clearTimeout(animTimer); animTimer = null }
+}
+
+function playAnimation() {
+  clearAnimTimer()
+  mode = 'animating'
+  let frame = 0
+
+  function nextFrame() {
+    if (mode !== 'animating') return
+    if (frame >= ANIMATION_FRAMES.length) {
+      mode = 'terminal'
+      updateDisplay()
+      return
+    }
+    const [content, delay] = ANIMATION_FRAMES[frame++]
+    show(content)
+    animTimer = setTimeout(nextFrame, delay)
   }
+
+  nextFrame()
+}
+
+function showUserList() {
+  clearAnimTimer()
+  mode = 'userlist'
+  show(USER_LIST)
+  animTimer = setTimeout(() => {
+    mode = 'terminal'
+    updateDisplay()
+  }, 8000)
 }
 
 function processOutput(raw: string) {
@@ -136,7 +170,7 @@ function connect() {
   ws = new WebSocket('wss://telehack-g2-production.up.railway.app')
 
   ws.onopen = () => {
-    lines.push('Connected.')
+    lines.push('Connected to Telehack.')
     updateDisplay()
     setInterval(() => { if (ws.readyState === 1) ws.send('\x00PING') }, 1000)
   }
@@ -157,7 +191,7 @@ function connect() {
     }
   }
 
-  ws.onerror = () => { lines.push('WS error'); if (mode === 'terminal') updateDisplay() }
+  ws.onerror = () => { lines.push('Connection error'); if (mode === 'terminal') updateDisplay() }
   ws.onclose = () => { lines.push('Disconnected - retrying...'); if (mode === 'terminal') updateDisplay(); setTimeout(connect, 3000) }
 }
 
@@ -167,58 +201,34 @@ const unsubscribe = bridge.onEvenHubEvent(event => {
   const sysType = event.sysEvent?.eventType ?? null
   const textType = event.textEvent?.eventType ?? null
 
-  // debug: record what fired
-  lastEvent = `s${sysType ?? '?'} t${textType ?? '?'}`
-
   if (sysType === OsEventTypeList.SYSTEM_EXIT_EVENT || sysType === OsEventTypeList.ABNORMAL_EXIT_EVENT) {
+    clearAnimTimer()
     ws?.close()
     unsubscribe()
     return
   }
 
   if (sysType === OsEventTypeList.DOUBLE_CLICK_EVENT || textType === OsEventTypeList.DOUBLE_CLICK_EVENT) {
-    if (mode === 'menu1' || mode === 'menu2') {
-      mode = 'terminal'
-      menuIndex = 0
-    } else {
-      mode = 'menu2'
-      menuIndex = 0
-    }
-    updateDisplay()
+    playAnimation()
     return
   }
 
+  if (sysType === OsEventTypeList.CLICK_EVENT || textType === OsEventTypeList.CLICK_EVENT) {
+    showUserList()
+    return
+  }
+
+  // scrolling only works in terminal mode
+  if (mode !== 'terminal') return
+
   if (sysType === OsEventTypeList.SCROLL_TOP_EVENT || textType === OsEventTypeList.SCROLL_TOP_EVENT) {
-    if (mode === 'menu1' || mode === 'menu2') {
-      menuIndex = Math.max(menuIndex - 1, 0)
-    } else {
-      scrollOffset = Math.min(scrollOffset + VISIBLE_LINES, lines.length - VISIBLE_LINES)
-    }
+    scrollOffset = Math.min(scrollOffset + VISIBLE_LINES, lines.length - VISIBLE_LINES)
     updateDisplay()
     return
   }
 
   if (sysType === OsEventTypeList.SCROLL_BOTTOM_EVENT || textType === OsEventTypeList.SCROLL_BOTTOM_EVENT) {
-    if (mode === 'menu1' || mode === 'menu2') {
-      const items = mode === 'menu1' ? MENU1_ITEMS : MENU2_ITEMS
-      menuIndex = Math.min(menuIndex + 1, items.length - 1)
-    } else {
-      scrollOffset = Math.max(scrollOffset - VISIBLE_LINES, 0)
-    }
-    updateDisplay()
-    return
-  }
-
-  if (sysType === OsEventTypeList.CLICK_EVENT || textType === OsEventTypeList.CLICK_EVENT) {
-    if (mode === 'terminal') {
-      mode = 'menu1'
-      menuIndex = 0
-    } else {
-      const items = mode === 'menu1' ? MENU1_ITEMS : MENU2_ITEMS
-      sendCommand(items[menuIndex])
-      mode = 'terminal'
-      menuIndex = 0
-    }
+    scrollOffset = Math.max(scrollOffset - VISIBLE_LINES, 0)
     updateDisplay()
     return
   }
