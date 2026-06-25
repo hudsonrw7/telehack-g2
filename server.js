@@ -25,12 +25,22 @@ const httpServer = http.createServer((req, res) => {
   let urlPath = req.url.split('?')[0]
   if (urlPath === '/' || urlPath === '/input') urlPath = '/index.html'
 
-  const file = path.join(__dirname, 'dist', urlPath)
-  const ext = path.extname(file)
-  fs.readFile(file, (err, data) => {
-    if (err) { res.writeHead(404); res.end('Not found'); return }
-    res.writeHead(200, { 'Content-Type': MIME[ext] || 'application/octet-stream' })
-    res.end(data)
+  // try dist/ first, then project root (for input.html etc.)
+  const distFile = path.join(__dirname, 'dist', urlPath)
+  const rootFile = path.join(__dirname, urlPath.slice(1))
+  const ext = path.extname(urlPath)
+
+  fs.readFile(distFile, (err, data) => {
+    if (!err) {
+      res.writeHead(200, { 'Content-Type': MIME[ext] || 'application/octet-stream' })
+      res.end(data)
+      return
+    }
+    fs.readFile(rootFile, (err2, data2) => {
+      if (err2) { res.writeHead(404); res.end('Not found'); return }
+      res.writeHead(200, { 'Content-Type': MIME[ext] || 'application/octet-stream' })
+      res.end(data2)
+    })
   })
 })
 
