@@ -90,7 +90,7 @@ wss.on('connection', ws => {
         if (client !== ws && client.readyState === 1) client.send(text)
       }
     } else if (socket && !socket.destroyed) {
-      socket.write(text + '\r\n')
+      socket.write(text + '\r')
     }
   })
 

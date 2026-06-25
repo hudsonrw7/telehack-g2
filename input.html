@@ -58,14 +58,21 @@
   <div id="inputRow">
     <input id="cmd" type="text" placeholder="type command here" autofocus />
     <button onclick="sendCmd()">Send</button>
-    <button onclick="if(ws.readyState===WebSocket.OPEN) ws.send(' ')">Space</button>
-    <button onclick="if(ws.readyState===WebSocket.OPEN) ws.send('\x03')">Ctrl+C</button>
+    <button onclick="sendRaw(' ')">Space</button>
+    <button onclick="sendRaw('\x03')">Ctrl+C</button>
   </div>
 
   <script>
     const log = document.getElementById('log')
     const status = document.getElementById('status')
     const cmd = document.getElementById('cmd')
+
+    function stripAnsi(str) {
+      return str.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '')
+                .replace(/\r\n/g, '\n')
+                .replace(/\r/g, '\n')
+                .replace(/\x00/g, '')
+    }
 
     const ws = new WebSocket('wss://telehack-g2-production.up.railway.app')
 
@@ -78,8 +85,13 @@
 
     ws.onmessage = (event) => {
       if (event.data === '\x00PING') return
-      log.textContent += event.data
+      if (event.data.startsWith('\x00PREVIEW:')) return
+      log.textContent += stripAnsi(event.data)
       log.scrollTop = log.scrollHeight
+    }
+
+    function sendRaw(text) {
+      if (ws.readyState === WebSocket.OPEN) ws.send(text)
     }
 
     function sendCmd() {
@@ -99,7 +111,7 @@
       if (e.key === 'Enter') sendCmd()
       if (e.key === 'c' && e.ctrlKey) {
         e.preventDefault()
-        if (ws.readyState === WebSocket.OPEN) ws.send('\x03')
+        sendRaw('\x03')
       }
     })
   </script>
