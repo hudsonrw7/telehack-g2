@@ -92,6 +92,15 @@ wss.on('connection', ws => {
       for (const client of clients) {
         if (client !== ws && client.readyState === 1) client.send(text)
       }
+    } else if (text === '\x00VOICE:') {
+      // broadcast to phone to trigger speech recognition
+      for (const client of clients) {
+        if (client !== ws && client.readyState === 1) client.send('\x00VOICE:')
+      }
+    } else if (text.startsWith('\x00RAW:')) {
+      // send raw bytes to SSH without appending \r (used for space, ctrl+c etc)
+      const raw = text.slice(5)
+      if (sshStream && !sshStream.destroyed) sshStream.write(raw)
     } else if (sshStream && !sshStream.destroyed) {
       sshStream.write(text + '\r')
     }
