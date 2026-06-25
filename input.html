@@ -67,7 +67,7 @@
     const status = document.getElementById('status')
     const cmd = document.getElementById('cmd')
 
-    const ws = new WebSocket('ws://localhost:8080')
+    const ws = new WebSocket('wss://telehack-g2-production.up.railway.app')
 
     ws.onopen = () => { status.textContent = 'Connected to Telehack' }
     ws.onclose = () => { status.textContent = 'Disconnected' }

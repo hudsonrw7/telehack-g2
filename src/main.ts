@@ -97,7 +97,7 @@ function processOutput(raw: string) {
   }
 }
 
-const ws = new WebSocket('ws://localhost:8080')
+const ws = new WebSocket('wss://telehack-g2-production.up.railway.app')
 
 ws.onopen = () => {
   lines = ['Connected! Type in browser.', 'Single tap = scroll up', 'Double tap = exit']
