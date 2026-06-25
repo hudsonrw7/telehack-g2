@@ -49,8 +49,9 @@ function connectTelehack() {
 
   socket.on('data', data => {
     const text = stripTelnet(data)
+    console.log('RAW:', JSON.stringify(data.slice(0, 40).toString('binary')))
+    console.log('STRIPPED:', JSON.stringify(text.slice(0, 80)))
     if (text.length > 0) {
-      console.log('Telehack:', JSON.stringify(text.slice(0, 80)))
       broadcast(text)
     }
   })
