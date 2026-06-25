@@ -12,18 +12,26 @@ const TELEHACK_PASS = process.env.TELEHACK_PASS || ''
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || ''
 
 // HTTP server serves input.html for the phone
+const MIME = {
+  '.html': 'text/html',
+  '.js': 'application/javascript',
+  '.css': 'text/css',
+  '.png': 'image/png',
+  '.svg': 'image/svg+xml',
+  '.ico': 'image/x-icon',
+}
+
 const httpServer = http.createServer((req, res) => {
-  if (req.url === '/' || req.url === '/input') {
-    const file = path.join(__dirname, 'input.html')
-    fs.readFile(file, (err, data) => {
-      if (err) { res.writeHead(404); res.end('Not found'); return }
-      res.writeHead(200, { 'Content-Type': 'text/html' })
-      res.end(data)
-    })
-  } else {
-    res.writeHead(404)
-    res.end('Not found')
-  }
+  let urlPath = req.url.split('?')[0]
+  if (urlPath === '/' || urlPath === '/input') urlPath = '/index.html'
+
+  const file = path.join(__dirname, 'dist', urlPath)
+  const ext = path.extname(file)
+  fs.readFile(file, (err, data) => {
+    if (err) { res.writeHead(404); res.end('Not found'); return }
+    res.writeHead(200, { 'Content-Type': MIME[ext] || 'application/octet-stream' })
+    res.end(data)
+  })
 })
 
 httpServer.listen(PORT, () => console.log(`Server running on port ${PORT}`))
